@@ -100,6 +100,7 @@ static inline struct aa_label *aa_get_file_label(struct aa_file_ctx *ctx)
 #define AA_X_CHILD		0x2000	/* make >AA_X_NONE apply to children */
 #define AA_X_INHERIT		0x4000
 #define AA_X_UNCONFINED		0x8000
+#define AA_X_NONEWPRIVS		0x1000	/* TODO: how do we pack this? */
 
 /* need to make conditional which ones are being set */
 struct path_cond {

@@ -617,7 +617,7 @@ static struct aa_label *x_to_label(struct aa_profile *profile,
 static struct aa_label *profile_transition(struct aa_profile *profile,
 					   const struct linux_binprm *bprm,
 					   char *buffer, struct path_cond *cond,
-					   bool *secure_exec)
+					   bool *secure_exec, bool *nnp_allow)
 {
 	struct aa_label *new = NULL;
 	struct aa_profile *component;
@@ -625,7 +625,6 @@ static struct aa_label *profile_transition(struct aa_profile *profile,
 	const char *info = NULL, *name = NULL, *target = NULL;
 	unsigned int state = profile->file.start;
 	struct aa_perms perms = {};
-	bool nonewprivs = false;
 	int error = 0;
 
 	AA_BUG(!profile);
@@ -659,6 +658,11 @@ static struct aa_label *profile_transition(struct aa_profile *profile,
 	/* find exec permissions for name */
 	state = aa_str_perms(profile->file.dfa, state, name, cond, &perms);
 	if (perms.allow & MAY_EXEC) {
+		if (perms.xindex & AA_X_NONEWPRIVS)
+			*nnp_allow = true;
+		else
+			*nnp_allow = false;
+
 		/* exec permission determine how to transition */
 		new = x_to_label(profile, bprm, name, perms.xindex, &target,
 				 &info);
@@ -732,7 +736,7 @@ static struct aa_label *profile_transition(struct aa_profile *profile,
 audit:
 	aa_audit_file(profile, &perms, OP_EXEC, MAY_EXEC, name, target, new,
 		      cond->uid, info, error);
-	if (!new || nonewprivs) {
+	if (!new) {
 		aa_put_label(new);
 		return ERR_PTR(error);
 	}
@@ -743,7 +747,7 @@ audit:
 static int profile_onexec(struct aa_profile *profile, struct aa_label *onexec,
 			  bool stack, const struct linux_binprm *bprm,
 			  char *buffer, struct path_cond *cond,
-			  bool *secure_exec)
+			  bool *secure_exec, bool *nnp_allow)
 {
 	unsigned int state = profile->file.start;
 	struct aa_perms perms = {};
@@ -816,7 +820,7 @@ static struct aa_label *handle_onexec(struct aa_label *label,
 				      struct aa_label *onexec, bool stack,
 				      const struct linux_binprm *bprm,
 				      char *buffer, struct path_cond *cond,
-				      bool *unsafe)
+				      bool *unsafe, bool *nnp_allow)
 {
 	struct aa_profile *profile;
 	struct aa_label *new;
@@ -830,26 +834,28 @@ static struct aa_label *handle_onexec(struct aa_label *label,
 	if (!stack) {
 		error = fn_for_each_in_ns(label, profile,
 				profile_onexec(profile, onexec, stack,
-					       bprm, buffer, cond, unsafe));
+					       bprm, buffer, cond, unsafe,
+					       nnp_allow));
 		if (error)
 			return ERR_PTR(error);
 		new = fn_label_build_in_ns(label, profile, GFP_ATOMIC,
 				aa_get_newest_label(onexec),
 				profile_transition(profile, bprm, buffer,
-						   cond, unsafe));
+						   cond, unsafe, nnp_allow));
 
 	} else {
 		/* TODO: determine how much we want to loosen this */
 		error = fn_for_each_in_ns(label, profile,
 				profile_onexec(profile, onexec, stack, bprm,
-					       buffer, cond, unsafe));
+					       buffer, cond, unsafe,
+					       nnp_allow));
 		if (error)
 			return ERR_PTR(error);
 		new = fn_label_build_in_ns(label, profile, GFP_ATOMIC,
 				aa_label_merge(&profile->label, onexec,
 					       GFP_ATOMIC),
 				profile_transition(profile, bprm, buffer,
-						   cond, unsafe));
+						   cond, unsafe, nnp_allow));
 	}
 
 	if (new)
@@ -881,6 +887,7 @@ int apparmor_bprm_set_creds(struct linux_binprm *bprm)
 	const char *info = NULL;
 	int error = 0;
 	bool unsafe = false;
+	bool nnp_allow = false;
 	struct path_cond cond = {
 		file_inode(bprm->file)->i_uid,
 		file_inode(bprm->file)->i_mode
@@ -911,11 +918,11 @@ int apparmor_bprm_set_creds(struct linux_binprm *bprm)
 	/* Test for onexec first as onexec override other x transitions. */
 	if (ctx->onexec)
 		new = handle_onexec(label, ctx->onexec, ctx->token,
-				    bprm, buffer, &cond, &unsafe);
+				    bprm, buffer, &cond, &unsafe, &nnp_allow);
 	else
 		new = fn_label_build(label, profile, GFP_ATOMIC,
 				profile_transition(profile, bprm, buffer,
-						   &cond, &unsafe));
+						   &cond, &unsafe, &nnp_allow));
 
 	AA_BUG(!new);
 	if (IS_ERR(new)) {
@@ -934,7 +941,7 @@ int apparmor_bprm_set_creds(struct linux_binprm *bprm)
 	 * subsets are allowed even when no_new_privs is set because this
 	 * aways results in a further reduction of permissions.
 	 */
-	if ((bprm->unsafe & LSM_UNSAFE_NO_NEW_PRIVS) &&
+	if ((bprm->unsafe & LSM_UNSAFE_NO_NEW_PRIVS) && !nnp_allow &&
 	    !unconfined(label) && !aa_label_is_subset(new, ctx->nnp)) {
 		error = -EPERM;
 		info = "no new privs";

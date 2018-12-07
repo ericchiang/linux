@@ -112,6 +112,10 @@ struct aa_data {
  * @policy: general match rules governing policy
  * @file: The set of rules governing basic file access and domain transitions
  * @caps: capabilities for the profile
+ * @xattr_count: number of xattrs values
+ * @xattrs: extended attributes whose values must match the xmatch
+ * @xattr_keys_count: number of xattr keys values
+ * @xattr_keys: extended attributes that must be present to match the profile
  * @rlimits: rlimits for the profile
  *
  * @dents: dentries for the profiles file entries in apparmorfs
@@ -152,6 +156,8 @@ struct aa_profile {
 
 	int xattr_count;
 	char **xattrs;
+	int xattr_keys_count;
+	char **xattr_keys;
 
 	struct aa_rlimit rlimits;
 

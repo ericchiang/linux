@@ -317,15 +317,32 @@ static int aa_xattrs_match(const struct linux_binprm *bprm,
 	ssize_t size;
 	struct dentry *d;
 	char *value = NULL;
-	int value_size = 0, ret = profile->xattr_count;
+	int value_size = 0;
+	int ret = profile->xattr_count + profile->xattr_keys_count;
 
-	if (!bprm || !profile->xattr_count)
+	if (!bprm)
 		return 0;
+
+	d = bprm->file->f_path.dentry;
+
+	if (profile->xattr_keys_count) {
+		/* validate that these attributes are present, ignore values */
+		for (i = 0; i < profile->xattr_keys_count; i++) {
+			size = vfs_getxattr_alloc(d, profile->xattr_keys[i],
+						  &value, value_size,
+						  GFP_KERNEL);
+			if (size < 0) {
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+	}
+
+	if (!profile->xattr_count)
+		goto out;
 
 	/* transition from exec match to xattr set */
 	state = aa_dfa_null_transition(profile->xmatch, state);
-
-	d = bprm->file->f_path.dentry;
 
 	for (i = 0; i < profile->xattr_count; i++) {
 		size = vfs_getxattr_alloc(d, profile->xattrs[i], &value,

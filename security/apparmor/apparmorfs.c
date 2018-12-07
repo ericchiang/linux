@@ -2212,6 +2212,7 @@ static struct aa_sfs_entry aa_sfs_entry_signal[] = {
 
 static struct aa_sfs_entry aa_sfs_entry_attach[] = {
 	AA_SFS_FILE_BOOLEAN("xattr", 1),
+	AA_SFS_FILE_BOOLEAN("xattr_key", 1),
 	{ }
 };
 static struct aa_sfs_entry aa_sfs_entry_domain[] = {

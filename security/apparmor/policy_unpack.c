@@ -535,6 +535,24 @@ static bool unpack_xattrs(struct aa_ext *e, struct aa_profile *profile)
 			goto fail;
 	}
 
+	if (unpack_nameX(e, AA_STRUCT, "xattr_keys")) {
+		int i, size;
+
+		size = unpack_array(e, NULL);
+		profile->xattr_keys_count = size;
+		profile->xattr_keys = kcalloc(size, sizeof(char *), GFP_KERNEL);
+		if (!profile->xattr_keys)
+			goto fail;
+		for (i = 0; i < size; i++) {
+			if (!unpack_strdup(e, &profile->xattr_keys[i], NULL))
+				goto fail;
+		}
+		if (!unpack_nameX(e, AA_ARRAYEND, NULL))
+			goto fail;
+		if (!unpack_nameX(e, AA_STRUCTEND, NULL))
+			goto fail;
+	}
+
 	return 1;
 
 fail:
